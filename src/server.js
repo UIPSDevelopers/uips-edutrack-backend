@@ -4,6 +4,10 @@ import cors from "cors";
 import mongoose from "mongoose";
 import userRoutes from "./routes/userRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import inventoryRoutes from "./routes/inventoryRoutes.js";
+import deliveryRoutes from "./routes/deliveryRoutes.js"
+import checkoutRoutes from "./routes/checkoutRoutes.js";
+import reportRoutes from "./routes/reportRoutes.js";
 
 dotenv.config();
 
@@ -22,6 +26,10 @@ mongoose
 //routes
 app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/delivery", deliveryRoutes);
+app.use("/api/checkout", checkoutRoutes);
+app.use("/api/reports", reportRoutes);
 
 // Start the server
 const PORT = process.env.PORT || 5000;

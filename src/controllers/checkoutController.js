@@ -1,0 +1,116 @@
+import mongoose from "mongoose";
+import Checkout from "../models/checkoutModel.js";
+import Inventory from "../models/inventoryModel.js";
+
+// 🧮 Generate unique checkout ID (incrementing)
+const generateCheckoutId = async (session) => {
+  const last = await Checkout.findOne().sort({ createdAt: -1 }).session(session);
+  if (!last) return "CH-000001";
+
+  const lastId = parseInt(last.checkoutId.split("-")[1]);
+  const newId = (lastId + 1).toString().padStart(6, "0");
+  return `CH-${newId}`;
+};
+
+// ➕ Add new checkout (with rollback safety)
+export const addCheckout = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { receiptNo, issuedBy, items } = req.body;
+    if (!receiptNo || !issuedBy || !items || items.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res
+        .status(400)
+        .json({ message: "Receipt number, issuedBy, and items are required." });
+    }
+
+    // ✅ Generate custom IDs
+    const checkoutId = await generateCheckoutId(session);
+    const transactionCount = await Checkout.countDocuments().session(session);
+    const nextNum = String(transactionCount + 1).padStart(6, "0");
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const transactionNo = `TXN-${date}-${nextNum}`;
+
+    // ✅ Validate and Deduct stock
+    for (const item of items) {
+      const existing = await Inventory.findOne({ itemId: item.itemId }).session(session);
+
+      if (!existing) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          message: `❌ Item ${item.itemName} (ID: ${item.itemId}) not found in inventory.`,
+        });
+      }
+
+      if ((existing.quantity || 0) < item.quantity) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          message: `⚠️ Not enough stock for ${item.itemName}. Available: ${existing.quantity}, requested: ${item.quantity}.`,
+        });
+      }
+
+      // Deduct quantity
+      existing.quantity = (existing.quantity || 0) - item.quantity;
+      await existing.save({ session });
+    }
+
+    // ✅ Save checkout record
+    const checkout = new Checkout({
+      checkoutId,
+      transactionNo,
+      receiptNo,
+      issuedBy,
+      items,
+    });
+
+    await checkout.save({ session });
+
+    // ✅ Commit transaction if everything passes
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(201).json({
+      message: "✅ Checkout recorded successfully.",
+      checkoutId,
+      transactionNo,
+    });
+  } catch (error) {
+    console.error("❌ Error adding checkout:", error);
+    await session.abortTransaction();
+    session.endSession();
+    res.status(500).json({ message: "Server error while adding checkout." });
+  }
+};
+
+// 📋 Get all checkouts
+export const getCheckouts = async (req, res) => {
+  try {
+    const checkouts = await Checkout.find()
+      .sort({ createdAt: -1 })
+      .select("-_id -__v");
+    res.status(200).json(checkouts);
+  } catch (error) {
+    console.error("❌ Error fetching checkouts:", error);
+    res.status(500).json({ message: "Server error fetching checkouts." });
+  }
+};
+
+// 🔍 Get checkout by ID
+export const getCheckoutById = async (req, res) => {
+  try {
+    const checkout = await Checkout.findOne({
+      checkoutId: req.params.id,
+    }).select("-_id -__v");
+    if (!checkout)
+      return res.status(404).json({ message: "Checkout not found." });
+    res.status(200).json(checkout);
+  } catch (error) {
+    console.error("❌ Error fetching checkout:", error);
+    res.status(500).json({ message: "Server error fetching checkout." });
+  }
+};
