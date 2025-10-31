@@ -8,6 +8,7 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 import deliveryRoutes from "./routes/deliveryRoutes.js"
 import checkoutRoutes from "./routes/checkoutRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
+import dashboardRoutes from "./routes/dashboard.js";
 
 dotenv.config();
 
@@ -30,6 +31,8 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+
 
 // Start the server
 const PORT = process.env.PORT || 5000;

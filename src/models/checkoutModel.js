@@ -5,6 +5,7 @@ const itemSchema = new mongoose.Schema({
   itemName: String,
   itemType: String,
   barcode: String,
+  sizeOrSource: String,
   quantity: Number,
 });
 

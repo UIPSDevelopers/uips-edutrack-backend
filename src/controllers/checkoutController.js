@@ -4,7 +4,9 @@ import Inventory from "../models/inventoryModel.js";
 
 // 🧮 Generate unique checkout ID (incrementing)
 const generateCheckoutId = async (session) => {
-  const last = await Checkout.findOne().sort({ createdAt: -1 }).session(session);
+  const last = await Checkout.findOne()
+    .sort({ createdAt: -1 })
+    .session(session);
   if (!last) return "CH-000001";
 
   const lastId = parseInt(last.checkoutId.split("-")[1]);
@@ -19,12 +21,10 @@ export const addCheckout = async (req, res) => {
 
   try {
     const { receiptNo, issuedBy, items } = req.body;
+
+    // 🔹 Basic validation
     if (!receiptNo || !issuedBy || !items || items.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res
-        .status(400)
-        .json({ message: "Receipt number, issuedBy, and items are required." });
+      throw new Error("Receipt number, issuedBy, and items are required.");
     }
 
     // ✅ Generate custom IDs
@@ -34,29 +34,39 @@ export const addCheckout = async (req, res) => {
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const transactionNo = `TXN-${date}-${nextNum}`;
 
-    // ✅ Validate and Deduct stock
+    const enrichedItems = [];
+
+    // ✅ Validate & deduct stock
     for (const item of items) {
-      const existing = await Inventory.findOne({ itemId: item.itemId }).session(session);
+      const existing = await Inventory.findOne({ itemId: item.itemId }).session(
+        session
+      );
 
       if (!existing) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({
-          message: `❌ Item ${item.itemName} (ID: ${item.itemId}) not found in inventory.`,
-        });
+        throw new Error(
+          `❌ Item ${item.itemName} (ID: ${item.itemId}) not found in inventory.`
+        );
       }
 
       if ((existing.quantity || 0) < item.quantity) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({
-          message: `⚠️ Not enough stock for ${item.itemName}. Available: ${existing.quantity}, requested: ${item.quantity}.`,
-        });
+        throw new Error(
+          `⚠️ Not enough stock for ${item.itemName}. Available: ${existing.quantity}, requested: ${item.quantity}.`
+        );
       }
 
       // Deduct quantity
       existing.quantity = (existing.quantity || 0) - item.quantity;
       await existing.save({ session });
+
+      // ✅ Enrich item details from inventory
+      enrichedItems.push({
+        itemId: existing.itemId,
+        itemName: existing.itemName,
+        itemType: existing.itemType || "-",
+        sizeOrSource: existing.sizeOrSource || "-",
+        barcode: existing.barcode || "-",
+        quantity: item.quantity,
+      });
     }
 
     // ✅ Save checkout record
@@ -65,12 +75,12 @@ export const addCheckout = async (req, res) => {
       transactionNo,
       receiptNo,
       issuedBy,
-      items,
+      items: enrichedItems, // enriched inventory items
     });
 
     await checkout.save({ session });
 
-    // ✅ Commit transaction if everything passes
+    // ✅ Commit transaction
     await session.commitTransaction();
     session.endSession();
 
@@ -80,10 +90,12 @@ export const addCheckout = async (req, res) => {
       transactionNo,
     });
   } catch (error) {
-    console.error("❌ Error adding checkout:", error);
+    console.error("❌ Error adding checkout:", error.message);
     await session.abortTransaction();
     session.endSession();
-    res.status(500).json({ message: "Server error while adding checkout." });
+    res.status(400).json({
+      message: error.message || "Server error while adding checkout.",
+    });
   }
 };
 
@@ -106,8 +118,11 @@ export const getCheckoutById = async (req, res) => {
     const checkout = await Checkout.findOne({
       checkoutId: req.params.id,
     }).select("-_id -__v");
-    if (!checkout)
+
+    if (!checkout) {
       return res.status(404).json({ message: "Checkout not found." });
+    }
+
     res.status(200).json(checkout);
   } catch (error) {
     console.error("❌ Error fetching checkout:", error);
