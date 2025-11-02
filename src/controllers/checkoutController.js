@@ -112,20 +112,31 @@ export const getCheckouts = async (req, res) => {
   }
 };
 
-// 🔍 Get checkout by ID
+// 🔍 Get checkout by receipt number or checkoutId
 export const getCheckoutById = async (req, res) => {
   try {
+    const ref = req.params.id.trim();
+    console.log("🧾 Searching checkout by receipt:", ref);
+
     const checkout = await Checkout.findOne({
-      checkoutId: req.params.id,
+      $or: [
+        { receiptNo: ref },
+        { checkoutId: ref },
+        { transactionNo: ref },
+      ],
     }).select("-_id -__v");
 
     if (!checkout) {
+      console.log("❌ No checkout found for:", ref);
       return res.status(404).json({ message: "Checkout not found." });
     }
 
+    console.log("✅ Checkout found:", checkout.receiptNo);
     res.status(200).json(checkout);
   } catch (error) {
     console.error("❌ Error fetching checkout:", error);
     res.status(500).json({ message: "Server error fetching checkout." });
   }
 };
+
+

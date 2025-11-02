@@ -9,6 +9,7 @@ import deliveryRoutes from "./routes/deliveryRoutes.js"
 import checkoutRoutes from "./routes/checkoutRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import dashboardRoutes from "./routes/dashboard.js";
+import returnRoutes from "./routes/returnRoutes.js";
 
 dotenv.config();
 
@@ -29,9 +30,11 @@ app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/delivery", deliveryRoutes);
-app.use("/api/checkout", checkoutRoutes);
+app.use("/api/checkouts", checkoutRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/returns", returnRoutes);
+
 
 
 // Start the server
