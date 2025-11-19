@@ -39,6 +39,15 @@ app.use(
 // Body parser
 app.use(express.json());
 
+// Health Check Route (for waking up Render)
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "EduTrack backend is running",
+    time: new Date().toISOString(),
+  });
+});
+
 // MongoDB connection
 const MONGO_URI = process.env.MONGO_URI;
 
