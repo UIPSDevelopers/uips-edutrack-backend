@@ -16,12 +16,26 @@ dotenv.config();
 const app = express();
 
 // Middleware
+const express = require("express");
+const cors = require("cors");
+
+const allowedOrigins = [
+  "https://edutrack.uips.online",
+  "http://localhost:5173"   // keep for local dev if you want
+];
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
+
 app.use(express.json());
-app.use(cors());
 
 // Connect to MongoDB
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(MONGO_URI)
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
