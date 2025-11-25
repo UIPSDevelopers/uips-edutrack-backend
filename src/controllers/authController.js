@@ -5,6 +5,13 @@ import User from "../models/userModel.js";
 
 dotenv.config();
 
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "15m"; // ⏱ default 15 minutes
+
+if (!JWT_SECRET) {
+  console.error("❌ JWT_SECRET is not defined in environment variables.");
+}
+
 /* ===========================
    🔐 LOGIN USER
 =========================== */
@@ -13,34 +20,40 @@ export const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required" });
+      return res
+        .status(400)
+        .json({ message: "Email and password are required." });
     }
 
-    // Find user by email or userId (allow both)
+    // Allow login via email OR userId (username-style)
     const user = await User.findOne({
-      $or: [{ email: email }, { userId: email }]
+      $or: [{ email: email }, { userId: email }],
     });
 
     if (!user) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res
+        .status(401)
+        .json({ message: "Invalid email/user ID or password." });
     }
 
-    // Compare password with hash
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res
+        .status(401)
+        .json({ message: "Invalid email/user ID or password." });
     }
 
-    // Generate JWT token
+    // Generate short-lived JWT (15 minutes by default)
     const token = jwt.sign(
       { userId: user.userId, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "1d" }
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
     );
 
-    res.status(200).json({
-      message: "Login successful",
+    return res.status(200).json({
+      message: "Login successful.",
       token,
+      expiresIn: JWT_EXPIRES_IN, // optional: frontend can read this
       user: {
         userId: user.userId,
         firstname: user.firstname,
@@ -51,7 +64,9 @@ export const loginUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Login error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    return res
+      .status(500)
+      .json({ message: "Server error during login.", error: error.message });
   }
 };
 
@@ -63,18 +78,33 @@ export const verifyToken = async (req, res) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "No token provided" });
+      return res.status(401).json({ message: "No token provided." });
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await User.findOne({ userId: decoded.userId }).select("-password");
-    if (!user) return res.status(404).json({ message: "User not found" });
+    const decoded = jwt.verify(token, JWT_SECRET);
 
-    res.status(200).json({ user });
+    const user = await User.findOne({ userId: decoded.userId }).select(
+      "-password"
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    return res.status(200).json({ user });
   } catch (error) {
     console.error("Verify token error:", error);
-    res.status(401).json({ message: "Invalid or expired token" });
+
+    // Professional, clear messages
+    if (error.name === "TokenExpiredError") {
+      return res
+        .status(401)
+        .json({ message: "Session expired. Please log in again." });
+    }
+
+    return res
+      .status(401)
+      .json({ message: "Invalid or expired token. Please log in again." });
   }
 };
