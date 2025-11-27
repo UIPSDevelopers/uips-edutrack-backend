@@ -1,6 +1,7 @@
 import Delivery from "../models/deliveryModel.js";
 import Checkout from "../models/checkoutModel.js";
 import Inventory from "../models/inventoryModel.js";
+import Return from "../models/returnModel.js";
 
 // 📦 Delivery Report
 export const getDeliveryReport = async (req, res) => {
@@ -43,6 +44,56 @@ export const getDeliveryReport = async (req, res) => {
     res
       .status(500)
       .json({ message: "Server error generating delivery report." });
+  }
+};
+
+// 🔁 Returns Report
+export const getReturnsReport = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const filter = {};
+
+    // 🔹 Filter by date range (use dateReturned to be consistent with your schema)
+    if (from && to) {
+      filter.dateReturned = {
+        $gte: new Date(from),
+        $lte: new Date(to),
+      };
+    }
+
+    // 🔹 Fetch all returns within range
+    const records = await Return.find(filter)
+      .sort({ dateReturned: -1 })
+      .select(
+        "returnNumber receiptRef transactionRef returnedBy dateReturned items"
+      );
+
+    // 🔹 Flatten items for table view (same style as other reports)
+    const formatted = [];
+    records.forEach((r) => {
+      r.items.forEach((item) => {
+        formatted.push({
+          returnNumber: r.returnNumber,
+          receiptRef: r.receiptRef,
+          transactionRef: r.transactionRef || "-",
+          itemId: item.itemId,
+          itemName: item.itemName,
+          sizeOrSource: item.sizeOrSource || "-",
+          quantity: item.quantity,
+          condition: item.condition || "Good",
+          remarks: item.remarks || "",
+          date: new Date(r.dateReturned).toLocaleDateString(),
+          returnedBy: r.returnedBy,
+        });
+      });
+    });
+
+    res.status(200).json(formatted);
+  } catch (error) {
+    console.error("❌ Error generating returns report:", error);
+    res
+      .status(500)
+      .json({ message: "Server error generating returns report." });
   }
 };
 
@@ -106,7 +157,7 @@ export const getInventoryReport = async (req, res) => {
   }
 };
 
-// 🧮 Summary Report (with total stock for date range)
+// 🧮 Summary Report (with total stock for date range, including returns)
 export const getSummaryReport = async (req, res) => {
   try {
     const { from, to } = req.query;
@@ -114,7 +165,7 @@ export const getSummaryReport = async (req, res) => {
     const toDate = to ? new Date(to) : new Date();
     toDate.setHours(23, 59, 59, 999);
 
-    // 📦 Deliveries (stock-in) within and before range
+    // 📦 Deliveries (stock-in)
     const deliveryAgg = await Delivery.aggregate([
       {
         $match: fromDate
@@ -130,7 +181,7 @@ export const getSummaryReport = async (req, res) => {
       },
     ]);
 
-    // 📤 Checkouts (stock-out) within and before range
+    // 📤 Checkouts (stock-out)
     const checkoutAgg = await Checkout.aggregate([
       {
         $match: fromDate
@@ -146,6 +197,22 @@ export const getSummaryReport = async (req, res) => {
       },
     ]);
 
+    // 🔁 Returns (stock-in)
+    const returnsAgg = await Return.aggregate([
+      {
+        $match: fromDate
+          ? { dateReturned: { $gte: fromDate, $lte: toDate } }
+          : { dateReturned: { $lte: toDate } },
+      },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.itemId",
+          totalReturned: { $sum: "$items.quantity" },
+        },
+      },
+    ]);
+
     // 🧾 Inventory reference
     const inventory = await Inventory.find().select(
       "itemId itemName sizeOrSource quantity"
@@ -155,19 +222,24 @@ export const getSummaryReport = async (req, res) => {
     const summary = inventory.map((inv) => {
       const delivery = deliveryAgg.find((d) => d._id === inv.itemId);
       const checkout = checkoutAgg.find((c) => c._id === inv.itemId);
+      const returned = returnsAgg.find((r) => r._id === inv.itemId);
 
       const totalDelivered = delivery ? delivery.totalDelivered : 0;
       const totalCheckedOut = checkout ? checkout.totalCheckedOut : 0;
+      const totalReturned = returned ? returned.totalReturned : 0;
+
+      const netChange = totalDelivered + totalReturned - totalCheckedOut;
 
       return {
         itemId: inv.itemId,
         itemName: inv.itemName,
         sizeOrSource: inv.sizeOrSource || "-",
         totalDelivered,
+        totalReturned,
         totalCheckedOut,
-        netChange: totalDelivered - totalCheckedOut,
-        totalStockAsOfDate: totalDelivered - totalCheckedOut, // 🧮 stock as of that date
-        currentStock: inv.quantity, // live today
+        netChange,
+        totalStockAsOfDate: netChange,
+        currentStock: inv.quantity,
       };
     });
 
@@ -175,11 +247,17 @@ export const getSummaryReport = async (req, res) => {
     const totals = summary.reduce(
       (acc, cur) => {
         acc.totalDelivered += cur.totalDelivered;
+        acc.totalReturned += cur.totalReturned;
         acc.totalCheckedOut += cur.totalCheckedOut;
         acc.totalStockAsOfDate += cur.totalStockAsOfDate;
         return acc;
       },
-      { totalDelivered: 0, totalCheckedOut: 0, totalStockAsOfDate: 0 }
+      {
+        totalDelivered: 0,
+        totalReturned: 0,
+        totalCheckedOut: 0,
+        totalStockAsOfDate: 0,
+      }
     );
 
     res.status(200).json({
@@ -188,7 +266,7 @@ export const getSummaryReport = async (req, res) => {
         to: toDate.toISOString(),
       },
       summary,
-      totals, // 👈 easy for frontend to show totals row
+      totals,
     });
   } catch (error) {
     console.error("❌ Error generating summary report:", error);
