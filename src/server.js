@@ -40,7 +40,7 @@ app.use(
 app.use(express.json());
 
 // Health Check Route (for waking up Render)
-app.get("/api/health", (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
     status: "ok",
     message: "EduTrack backend is running",
