@@ -82,10 +82,10 @@ export const getItemByBarcode = async (req, res) => {
   }
 };
 
+// ➕ Single add item
 export const addItem = async (req, res) => {
   try {
-    const { itemType, itemName, sizeOrSource, barcode, addedBy } =
-      req.body;
+    const { itemType, itemName, sizeOrSource, barcode, addedBy } = req.body;
 
     if (!itemType || !itemName || !barcode || !addedBy) {
       return res.status(400).json({ message: "Missing required fields." });
@@ -107,11 +107,129 @@ export const addItem = async (req, res) => {
       sizeOrSource,
       barcode,
       addedBy,
+      // quantity stays default: 0
     });
 
     res.status(201).json({ message: "Item added successfully", item: newItem });
   } catch (error) {
     console.error("Error adding item:", error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// 🚚 BULK ADD ITEMS
+// POST /api/inventory/bulk-add
+// body: { items: [ { itemType, itemName, sizeOrSource, barcode, addedBy }, ... ] }
+export const bulkAddItems = async (req, res) => {
+  try {
+    const { items } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "No items provided for bulk insert." });
+    }
+
+    // Clean / normalize input
+    const cleaned = items.map((item, index) => ({
+      index, // keep original index for error reporting (for frontend)
+      itemType: item.itemType?.toString().trim() || "",
+      itemName: item.itemName?.toString().trim() || "",
+      sizeOrSource: item.sizeOrSource?.toString().trim() || "",
+      barcode: item.barcode?.toString().trim() || "",
+      addedBy: item.addedBy?.toString().trim() || "Unknown User",
+    }));
+
+    const failedRows = [];
+    const validItems = [];
+    const seenBarcodes = new Set();
+
+    // Basic validation + in-file duplicate check
+    for (const item of cleaned) {
+      if (!item.itemType || !item.itemName || !item.barcode) {
+        failedRows.push({
+          index: item.index,
+          reason: "Missing required fields (itemType, itemName, barcode).",
+        });
+        continue;
+      }
+
+      if (seenBarcodes.has(item.barcode)) {
+        failedRows.push({
+          index: item.index,
+          reason: `Duplicate barcode in file: ${item.barcode}`,
+        });
+        continue;
+      }
+
+      seenBarcodes.add(item.barcode);
+      validItems.push(item);
+    }
+
+    if (!validItems.length) {
+      return res.status(400).json({
+        message: "No valid items to import after validation.",
+        failedRows,
+      });
+    }
+
+    // Check against existing barcodes in DB
+    const barcodes = validItems.map((i) => i.barcode);
+    const existing = await Inventory.find({ barcode: { $in: barcodes } }).select(
+      "barcode"
+    );
+    const existingSet = new Set(existing.map((e) => e.barcode));
+
+    const docsToInsert = [];
+
+    for (const item of validItems) {
+      if (existingSet.has(item.barcode)) {
+        failedRows.push({
+          index: item.index,
+          reason: `Barcode already exists in system: ${item.barcode}`,
+        });
+        continue;
+      }
+
+      const itemId = await generateItemId();
+
+      docsToInsert.push({
+        itemId,
+        itemType: item.itemType,
+        itemName: item.itemName,
+        sizeOrSource: item.sizeOrSource,
+        barcode: item.barcode,
+        addedBy: item.addedBy,
+        quantity: 0, // definitions only
+      });
+    }
+
+    if (!docsToInsert.length) {
+      return res.status(400).json({
+        message: "All rows failed validation / duplicate checks.",
+        failedRows,
+      });
+    }
+
+    // Insert (unordered so it doesn't stop on first error if any race on unique indexes)
+    const inserted = await Inventory.insertMany(docsToInsert, { ordered: false });
+
+    const successCount = inserted.length;
+    const total = items.length;
+
+    return res.status(200).json({
+      message:
+        failedRows.length === 0
+          ? "Bulk insert successful."
+          : "Bulk insert completed with some errors.",
+      count: successCount,
+      failedRows, // [{ index, reason }]
+      total,
+    });
+  } catch (error) {
+    console.error("Error in bulkAddItems:", error);
+    res
+      .status(500)
+      .json({ message: "Server error during bulk insert." });
   }
 };

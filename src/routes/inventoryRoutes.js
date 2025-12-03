@@ -5,6 +5,7 @@ import {
   updateItem,
   deleteItem,
   getItemByBarcode,
+  bulkAddItems, // 🆕
 } from "../controllers/inventoryController.js";
 
 import { verifyToken } from "../middleware/authMiddleware.js";   // 🔐 adjust path if needed
@@ -30,13 +31,22 @@ router.get(
   getItemByBarcode
 );
 
-// ➕ Add new inventory item
+// ➕ Add new inventory item (single)
 // InventoryStaff CAN add (only edit/delete are blocked), plus IT, Accounts, InventoryAdmin
 router.post(
   "/add",
   verifyToken,
   authorizeRole("IT", "InventoryStaff", "Accounts", "InventoryAdmin"),
   addItem
+);
+
+// 🧾 BULK IMPORT items
+// Same roles as add
+router.post(
+  "/bulk-add",
+  verifyToken,
+  authorizeRole("IT", "InventoryStaff", "Accounts", "InventoryAdmin"),
+  bulkAddItems
 );
 
 // ✏️ Update inventory item
