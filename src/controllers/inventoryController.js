@@ -136,6 +136,7 @@ export const addItem = async (req, res) => {
 //   createInitialDelivery?: boolean,
 //   deliveryNumber?: string
 // }
+// 🚚 BULK ADD ITEMS (with quantity + optional Initial Delivery)
 export const bulkAddItems = async (req, res) => {
   try {
     const { items, createInitialDelivery, deliveryNumber } = req.body || {};
@@ -148,7 +149,7 @@ export const bulkAddItems = async (req, res) => {
 
     // Clean / normalize input
     const cleaned = items.map((item, index) => ({
-      index, // keep original index for error reporting (for frontend)
+      index,
       itemType: item.itemType?.toString().trim() || "",
       itemName: item.itemName?.toString().trim() || "",
       sizeOrSource: item.sizeOrSource?.toString().trim() || "",
@@ -217,7 +218,7 @@ export const bulkAddItems = async (req, res) => {
         sizeOrSource: item.sizeOrSource,
         barcode: item.barcode,
         addedBy: item.addedBy,
-        quantity: item.quantity, // 🆕 use quantity from file (initial stock)
+        quantity: item.quantity, // 🆕 initial stock from file
       });
     }
 
@@ -228,7 +229,7 @@ export const bulkAddItems = async (req, res) => {
       });
     }
 
-    // Insert (unordered so it doesn't stop on first error if any race on unique indexes)
+    // ✅ Insert inventory items
     const inserted = await Inventory.insertMany(docsToInsert, {
       ordered: false,
     });
@@ -236,17 +237,17 @@ export const bulkAddItems = async (req, res) => {
     const successCount = inserted.length;
     const total = items.length;
 
-    // 🧾 Optionally create an Initial Delivery record (but don't break if this fails)
-    let deliveryInfo = null;
+    // 🧾 Try to create an Initial Delivery record, but DON'T break if it fails
+    let deliveryDoc = null;
 
-    if (createInitialDelivery && inserted.length > 0) {
+    if (createInitialDelivery && deliveryNumber && inserted.length > 0) {
       try {
         const newDeliveryId = await generateDeliveryId();
         const receivedBy = inserted[0].addedBy || "System (Bulk Import)";
 
-        const deliveryDoc = await Delivery.create({
+        deliveryDoc = await Delivery.create({
           deliveryId: newDeliveryId,
-          deliveryNumber: (deliveryNumber || "INITIAL-STOCK").toString().trim(),
+          deliveryNumber: deliveryNumber.toString().trim(), // e.g. "initial"
           supplier: "Initial Inventory Import",
           receivedBy,
           dateReceived: new Date(),
@@ -255,25 +256,16 @@ export const bulkAddItems = async (req, res) => {
             itemName: it.itemName,
             itemType: it.itemType,
             sizeOrSource: it.sizeOrSource || "",
-            barcode: [it.barcode], // your Delivery model uses array
+            barcode: [it.barcode], // keep same structure as /delivery/add
             quantity: it.quantity || 0,
           })),
         });
-
-        deliveryInfo = {
-          deliveryId: deliveryDoc.deliveryId,
-          deliveryNumber: deliveryDoc.deliveryNumber,
-        };
       } catch (err) {
         console.error(
-          "❌ Error creating initial Delivery from bulkAddItems:",
+          "⚠ Error creating initial Delivery document from bulk import:",
           err
         );
-        // don't fail the whole bulk insert because of delivery failure
-        deliveryInfo = {
-          error: true,
-          message: err.message || "Failed to create initial delivery record.",
-        };
+        // do NOT throw – import should still be considered success
       }
     }
 
@@ -285,13 +277,10 @@ export const bulkAddItems = async (req, res) => {
       count: successCount,
       failedRows, // [{ index, reason }]
       total,
-      delivery: deliveryInfo, // 🆕 more detailed info for frontend
+      createdDeliveryId: deliveryDoc?.deliveryId || null,
     });
   } catch (error) {
     console.error("Error in bulkAddItems:", error);
-    res.status(500).json({
-      message: "Server error during bulk insert.",
-      error: error.message,
-    });
+    res.status(500).json({ message: "Server error during bulk insert." });
   }
 };
