@@ -24,11 +24,39 @@ const generateDeliveryId = async () => {
   return `DEL-${nextNumber.toString().padStart(6, "0")}`;
 };
 
-// 📦 Get all inventory items
+// 📦 Get all inventory items (with pagination + optional search)
 export const getAllItems = async (req, res) => {
   try {
-    const items = await Inventory.find().sort({ createdAt: -1 });
-    res.status(200).json(items);
+    // ?page=1&limit=20&search=uniform
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 20;
+    const skip = (page - 1) * limit;
+    const search = (req.query.search || "").trim();
+
+    const filter = {};
+
+    // 🔍 Optional simple search by name, type, size/source, or barcode
+    if (search) {
+      filter.$or = [
+        { itemName: { $regex: search, $options: "i" } },
+        { itemType: { $regex: search, $options: "i" } },
+        { sizeOrSource: { $regex: search, $options: "i" } },
+        { barcode: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      Inventory.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Inventory.countDocuments(filter),
+    ]);
+
+    res.status(200).json({
+      items, // current page data
+      total, // total items (all pages)
+      page, // current page
+      limit, // page size
+      pages: Math.ceil(total / limit), // total pages
+    });
   } catch (error) {
     console.error("Error fetching items:", error);
     res.status(500).json({ message: "Server error" });
