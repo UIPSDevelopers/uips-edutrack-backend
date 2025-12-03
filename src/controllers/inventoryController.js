@@ -236,28 +236,45 @@ export const bulkAddItems = async (req, res) => {
     const successCount = inserted.length;
     const total = items.length;
 
-    // 🧾 Optionally create an Initial Delivery record
-    let deliveryDoc = null;
+    // 🧾 Optionally create an Initial Delivery record (but don't break if this fails)
+    let deliveryInfo = null;
 
-    if (createInitialDelivery && deliveryNumber && inserted.length > 0) {
-      const newDeliveryId = await generateDeliveryId();
-      const receivedBy = inserted[0].addedBy || "System (Bulk Import)";
+    if (createInitialDelivery && inserted.length > 0) {
+      try {
+        const newDeliveryId = await generateDeliveryId();
+        const receivedBy = inserted[0].addedBy || "System (Bulk Import)";
 
-      deliveryDoc = await Delivery.create({
-        deliveryId: newDeliveryId,
-        deliveryNumber: deliveryNumber.toString().trim(),
-        supplier: "Initial Inventory Import",
-        receivedBy,
-        dateReceived: new Date(),
-        items: inserted.map((it) => ({
-          itemId: it.itemId,
-          itemName: it.itemName,
-          itemType: it.itemType,
-          sizeOrSource: it.sizeOrSource || "",
-          barcode: [it.barcode], // your Delivery model uses array
-          quantity: it.quantity || 0,
-        })),
-      });
+        const deliveryDoc = await Delivery.create({
+          deliveryId: newDeliveryId,
+          deliveryNumber: (deliveryNumber || "INITIAL-STOCK").toString().trim(),
+          supplier: "Initial Inventory Import",
+          receivedBy,
+          dateReceived: new Date(),
+          items: inserted.map((it) => ({
+            itemId: it.itemId,
+            itemName: it.itemName,
+            itemType: it.itemType,
+            sizeOrSource: it.sizeOrSource || "",
+            barcode: [it.barcode], // your Delivery model uses array
+            quantity: it.quantity || 0,
+          })),
+        });
+
+        deliveryInfo = {
+          deliveryId: deliveryDoc.deliveryId,
+          deliveryNumber: deliveryDoc.deliveryNumber,
+        };
+      } catch (err) {
+        console.error(
+          "❌ Error creating initial Delivery from bulkAddItems:",
+          err
+        );
+        // don't fail the whole bulk insert because of delivery failure
+        deliveryInfo = {
+          error: true,
+          message: err.message || "Failed to create initial delivery record.",
+        };
+      }
     }
 
     return res.status(200).json({
@@ -268,10 +285,13 @@ export const bulkAddItems = async (req, res) => {
       count: successCount,
       failedRows, // [{ index, reason }]
       total,
-      createdDeliveryId: deliveryDoc?.deliveryId || null, // 🆕 so UI can show it
+      delivery: deliveryInfo, // 🆕 more detailed info for frontend
     });
   } catch (error) {
     console.error("Error in bulkAddItems:", error);
-    res.status(500).json({ message: "Server error during bulk insert." });
+    res.status(500).json({
+      message: "Server error during bulk insert.",
+      error: error.message,
+    });
   }
 };
