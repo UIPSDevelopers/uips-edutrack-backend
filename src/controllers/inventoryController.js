@@ -1,5 +1,6 @@
 import Inventory from "../models/inventoryModel.js";
 import Counter from "../models/counter.js";
+import Delivery from "../models/deliveryModel.js"; // 🆕 make sure path is correct
 
 const generateItemId = async () => {
   const counter = await Counter.findOneAndUpdate(
@@ -10,6 +11,17 @@ const generateItemId = async () => {
 
   const nextNumber = counter.seq;
   return `ITEM-${nextNumber.toString().padStart(6, "0")}`;
+};
+
+const generateDeliveryId = async () => {
+  const counter = await Counter.findOneAndUpdate(
+    { name: "delivery" },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+
+  const nextNumber = counter.seq;
+  return `DEL-${nextNumber.toString().padStart(6, "0")}`;
 };
 
 // 📦 Get all inventory items
@@ -117,12 +129,16 @@ export const addItem = async (req, res) => {
   }
 };
 
-// 🚚 BULK ADD ITEMS
+// 🚚 BULK ADD ITEMS (with quantity + optional Initial Delivery)
 // POST /api/inventory/bulk-add
-// body: { items: [ { itemType, itemName, sizeOrSource, barcode, addedBy }, ... ] }
+// body: {
+//   items: [ { itemType, itemName, sizeOrSource, barcode, quantity?, addedBy }, ... ],
+//   createInitialDelivery?: boolean,
+//   deliveryNumber?: string
+// }
 export const bulkAddItems = async (req, res) => {
   try {
-    const { items } = req.body;
+    const { items, createInitialDelivery, deliveryNumber } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return res
@@ -137,6 +153,7 @@ export const bulkAddItems = async (req, res) => {
       itemName: item.itemName?.toString().trim() || "",
       sizeOrSource: item.sizeOrSource?.toString().trim() || "",
       barcode: item.barcode?.toString().trim() || "",
+      quantity: Number(item.quantity ?? 0) || 0, // 🆕 quantity support
       addedBy: item.addedBy?.toString().trim() || "Unknown User",
     }));
 
@@ -175,9 +192,9 @@ export const bulkAddItems = async (req, res) => {
 
     // Check against existing barcodes in DB
     const barcodes = validItems.map((i) => i.barcode);
-    const existing = await Inventory.find({ barcode: { $in: barcodes } }).select(
-      "barcode"
-    );
+    const existing = await Inventory.find({
+      barcode: { $in: barcodes },
+    }).select("barcode");
     const existingSet = new Set(existing.map((e) => e.barcode));
 
     const docsToInsert = [];
@@ -200,7 +217,7 @@ export const bulkAddItems = async (req, res) => {
         sizeOrSource: item.sizeOrSource,
         barcode: item.barcode,
         addedBy: item.addedBy,
-        quantity: 0, // definitions only
+        quantity: item.quantity, // 🆕 use quantity from file (initial stock)
       });
     }
 
@@ -212,10 +229,36 @@ export const bulkAddItems = async (req, res) => {
     }
 
     // Insert (unordered so it doesn't stop on first error if any race on unique indexes)
-    const inserted = await Inventory.insertMany(docsToInsert, { ordered: false });
+    const inserted = await Inventory.insertMany(docsToInsert, {
+      ordered: false,
+    });
 
     const successCount = inserted.length;
     const total = items.length;
+
+    // 🧾 Optionally create an Initial Delivery record
+    let deliveryDoc = null;
+
+    if (createInitialDelivery && deliveryNumber && inserted.length > 0) {
+      const newDeliveryId = await generateDeliveryId();
+      const receivedBy = inserted[0].addedBy || "System (Bulk Import)";
+
+      deliveryDoc = await Delivery.create({
+        deliveryId: newDeliveryId,
+        deliveryNumber: deliveryNumber.toString().trim(),
+        supplier: "Initial Inventory Import",
+        receivedBy,
+        dateReceived: new Date(),
+        items: inserted.map((it) => ({
+          itemId: it.itemId,
+          itemName: it.itemName,
+          itemType: it.itemType,
+          sizeOrSource: it.sizeOrSource || "",
+          barcode: [it.barcode], // your Delivery model uses array
+          quantity: it.quantity || 0,
+        })),
+      });
+    }
 
     return res.status(200).json({
       message:
@@ -225,11 +268,10 @@ export const bulkAddItems = async (req, res) => {
       count: successCount,
       failedRows, // [{ index, reason }]
       total,
+      createdDeliveryId: deliveryDoc?.deliveryId || null, // 🆕 so UI can show it
     });
   } catch (error) {
     console.error("Error in bulkAddItems:", error);
-    res
-      .status(500)
-      .json({ message: "Server error during bulk insert." });
+    res.status(500).json({ message: "Server error during bulk insert." });
   }
 };
