@@ -24,18 +24,27 @@ const generateDeliveryId = async () => {
   return `DEL-${nextNumber.toString().padStart(6, "0")}`;
 };
 
-// 📦 Get all inventory items (with pagination + optional search)
+// 📦 Get all inventory items (with pagination + optional search/filter + fetch-all)
 export const getAllItems = async (req, res) => {
   try {
-    // ?page=1&limit=20&search=uniform
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 20;
-    const skip = (page - 1) * limit;
+    const rawPage = parseInt(req.query.page, 10);
+    const rawLimit = parseInt(req.query.limit, 10);
+
     const search = (req.query.search || "").trim();
+    const type = (req.query.type || "").trim();
+    const allFlag = req.query.all === "true" || req.query.all === "1";
+
+    const page = !allFlag && rawPage > 0 ? rawPage : 1;
+    const limit = allFlag ? 0 : rawLimit > 0 ? rawLimit : 20; // 0 = fetch all
 
     const filter = {};
 
-    // 🔍 Optional simple search by name, type, size/source, or barcode
+    // 🔍 filter by item type if provided
+    if (type && type !== "All") {
+      filter.itemType = type;
+    }
+
+    // 🔍 Optional search by name, type, size/source, barcode
     if (search) {
       filter.$or = [
         { itemName: { $regex: search, $options: "i" } },
@@ -45,17 +54,30 @@ export const getAllItems = async (req, res) => {
       ];
     }
 
-    const [items, total] = await Promise.all([
-      Inventory.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      Inventory.countDocuments(filter),
-    ]);
+    const baseQuery = Inventory.find(filter).sort({ createdAt: -1 });
+
+    let items;
+    let total;
+
+    if (limit === 0) {
+      // 🧹 fetch ALL (no pagination)
+      items = await baseQuery;
+      total = items.length;
+    } else {
+      const skip = (page - 1) * limit;
+
+      [items, total] = await Promise.all([
+        baseQuery.skip(skip).limit(limit),
+        Inventory.countDocuments(filter),
+      ]);
+    }
 
     res.status(200).json({
-      items, // current page data
-      total, // total items (all pages)
-      page, // current page
-      limit, // page size
-      pages: Math.ceil(total / limit), // total pages
+      items,
+      total,
+      page: limit === 0 ? 1 : page,
+      limit: limit === 0 ? total : limit,
+      pages: limit === 0 ? 1 : Math.ceil(total / (limit || 1)),
     });
   } catch (error) {
     console.error("Error fetching items:", error);
