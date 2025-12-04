@@ -22,13 +22,12 @@ const app = express();
 // CORS
 const allowedOrigins = [
   "https://edutrack.uips.online",
-  "http://localhost:5173", // keep for local dev
+  "http://localhost:5173",
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow tools / curl / Postman (no origin)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("Not allowed by CORS"), false);
@@ -37,14 +36,14 @@ app.use(
   })
 );
 
-// Body parser
-app.use(express.json());
+// ❌ REMOVE THIS
+// app.use(express.json());
 
-// ⬇️ increase JSON + urlencoded body size limit
+// ✅ KEEP ONLY ONE JSON PARSER WITH LIMIT
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 
-// Health Check Route (for waking up Render)
+// Health Check
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
@@ -53,16 +52,16 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// MongoDB connection
+// MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI;
 
 if (!MONGO_URI) {
-  console.error("❌ MONGO_URI is not defined in environment variables");
+  console.error("❌ MONGO_URI is not defined");
   process.exit(1);
 }
 
 mongoose
-  .connect(MONGO_URI /* , { useNewUrlParser: true, useUnifiedTopology: true } */)
+  .connect(MONGO_URI)
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => {
     console.error("❌ MongoDB connection error:", err);
