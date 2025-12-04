@@ -39,6 +39,10 @@ app.use(
 // Body parser
 app.use(express.json());
 
+// ⬇️ increase JSON + urlencoded body size limit
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
+
 // Health Check Route (for waking up Render)
 app.get("/api/health", (req, res) => {
   res.json({
