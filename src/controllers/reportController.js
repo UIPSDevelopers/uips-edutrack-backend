@@ -6,7 +6,7 @@ import Return from "../models/returnModel.js";
 // 📦 Delivery Report
 export const getDeliveryReport = async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, page = 1, limit = 20, all } = req.query;
     const filter = {};
 
     if (from && to) {
@@ -38,7 +38,10 @@ export const getDeliveryReport = async (req, res) => {
       });
     });
 
-    res.status(200).json(formatted);
+    // 🔹 Apply backend pagination on flattened rows
+    const paged = paginateArray(formatted, page, limit, all === "true");
+
+    res.status(200).json(paged);
   } catch (error) {
     console.error("❌ Error generating delivery report:", error);
     res
@@ -47,13 +50,41 @@ export const getDeliveryReport = async (req, res) => {
   }
 };
 
+// Simple array pagination helper
+const paginateArray = (array, page = 1, limit = 20, allFlag = false) => {
+  const isAll = allFlag || !limit || Number(limit) === 0;
+
+  const total = array.length;
+  if (isAll) {
+    return {
+      items: array,
+      total,
+      page: 1,
+      pages: 1,
+    };
+  }
+
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.max(1, Number(limit) || 20);
+
+  const pages = Math.max(1, Math.ceil(total / safeLimit));
+  const start = (safePage - 1) * safeLimit;
+  const end = start + safeLimit;
+
+  return {
+    items: array.slice(start, end),
+    total,
+    page: safePage,
+    pages,
+  };
+};
+
 // 🔁 Returns Report
 export const getReturnsReport = async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, page = 1, limit = 20, all } = req.query;
     const filter = {};
 
-    // 🔹 Filter by date range (use dateReturned to be consistent with your schema)
     if (from && to) {
       filter.dateReturned = {
         $gte: new Date(from),
@@ -61,14 +92,12 @@ export const getReturnsReport = async (req, res) => {
       };
     }
 
-    // 🔹 Fetch all returns within range
     const records = await Return.find(filter)
       .sort({ dateReturned: -1 })
       .select(
         "returnNumber receiptRef transactionRef returnedBy dateReturned items"
       );
 
-    // 🔹 Flatten items for table view (same style as other reports)
     const formatted = [];
     records.forEach((r) => {
       r.items.forEach((item) => {
@@ -88,7 +117,9 @@ export const getReturnsReport = async (req, res) => {
       });
     });
 
-    res.status(200).json(formatted);
+    const paged = paginateArray(formatted, page, limit, all === "true");
+
+    res.status(200).json(paged);
   } catch (error) {
     console.error("❌ Error generating returns report:", error);
     res
@@ -100,10 +131,9 @@ export const getReturnsReport = async (req, res) => {
 // 📤 Checkout Report
 export const getCheckoutReport = async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, page = 1, limit = 20, all } = req.query;
     const filter = {};
 
-    // 🔹 Filter by date range
     if (from && to) {
       filter.createdAt = {
         $gte: new Date(from),
@@ -111,12 +141,10 @@ export const getCheckoutReport = async (req, res) => {
       };
     }
 
-    // 🔹 Fetch all checkouts within range
     const checkouts = await Checkout.find(filter)
       .sort({ createdAt: -1 })
       .select("transactionNo receiptNo issuedBy createdAt items");
 
-    // 🔹 Flatten items to match delivery report format
     const formatted = [];
     checkouts.forEach((c) => {
       c.items.forEach((item) => {
@@ -128,12 +156,14 @@ export const getCheckoutReport = async (req, res) => {
           barcode: item.barcode || "-",
           quantity: item.quantity || 0,
           date: new Date(c.createdAt).toLocaleDateString(),
-          receivedBy: c.issuedBy || "-", // ✅ consistent column naming
+          receivedBy: c.issuedBy || "-", // consistent
         });
       });
     });
 
-    res.status(200).json(formatted);
+    const paged = paginateArray(formatted, page, limit, all === "true");
+
+    res.status(200).json(paged);
   } catch (error) {
     console.error("❌ Error generating checkout report:", error);
     res
@@ -145,10 +175,15 @@ export const getCheckoutReport = async (req, res) => {
 // 📊 Current Inventory Report
 export const getInventoryReport = async (req, res) => {
   try {
+    const { page = 1, limit = 20, all } = req.query;
+
     const items = await Inventory.find()
       .sort({ itemName: 1 })
       .select("-_id -__v");
-    res.status(200).json(items);
+
+    const paged = paginateArray(items, page, limit, all === "true");
+
+    res.status(200).json(paged);
   } catch (error) {
     console.error("❌ Error generating inventory report:", error);
     res
@@ -160,7 +195,7 @@ export const getInventoryReport = async (req, res) => {
 // 🧮 Summary Report (with total stock for date range, including returns)
 export const getSummaryReport = async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, page = 1, limit = 20, all } = req.query;
     const fromDate = from ? new Date(from) : null;
     const toDate = to ? new Date(to) : new Date();
     toDate.setHours(23, 59, 59, 999);
@@ -213,12 +248,10 @@ export const getSummaryReport = async (req, res) => {
       },
     ]);
 
-    // 🧾 Inventory reference
     const inventory = await Inventory.find().select(
       "itemId itemName sizeOrSource quantity"
     );
 
-    // 🔄 Combine data
     const summary = inventory.map((inv) => {
       const delivery = deliveryAgg.find((d) => d._id === inv.itemId);
       const checkout = checkoutAgg.find((c) => c._id === inv.itemId);
@@ -243,7 +276,6 @@ export const getSummaryReport = async (req, res) => {
       };
     });
 
-    // 🧮 Grand total (bottom line)
     const totals = summary.reduce(
       (acc, cur) => {
         acc.totalDelivered += cur.totalDelivered;
@@ -260,13 +292,19 @@ export const getSummaryReport = async (req, res) => {
       }
     );
 
+    // 🔹 Backend pagination on summary rows
+    const paged = paginateArray(summary, page, limit, all === "true");
+
     res.status(200).json({
       dateRange: {
         from: fromDate ? fromDate.toISOString() : "Beginning",
         to: toDate.toISOString(),
       },
-      summary,
+      summary: paged.items,
       totals,
+      total: paged.total,
+      page: paged.page,
+      pages: paged.pages,
     });
   } catch (error) {
     console.error("❌ Error generating summary report:", error);
