@@ -6,6 +6,7 @@ const itemSchema = new mongoose.Schema({
   itemType: String,
   barcode: String,
   sizeOrSource: String,
+  gradeLevel: String,
   quantity: Number,
 });
 

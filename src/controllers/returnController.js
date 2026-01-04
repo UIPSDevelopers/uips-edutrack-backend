@@ -62,6 +62,7 @@ export const addReturn = async (req, res) => {
         itemId: item.itemId,
         itemName: item.itemName,
         sizeOrSource: checkoutItem.sizeOrSource || "-",
+        gradeLevel: checkoutItem.gradeLevel || "-",
         quantity: item.quantity,
         condition: item.condition,
         remarks: item.remarks || "",

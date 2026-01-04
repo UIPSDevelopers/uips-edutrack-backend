@@ -36,6 +36,7 @@ export const addDelivery = async (req, res) => {
         itemName: i.itemName,
         itemType: i.itemType,
         sizeOrSource: i.sizeOrSource || "", // ✅ store it
+        gradeLevel: i.gradeLevel || "",   // ✅ store it
         barcode: i.barcode || [],
         quantity: i.quantity,
       })),

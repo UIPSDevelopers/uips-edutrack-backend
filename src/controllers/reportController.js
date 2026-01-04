@@ -30,6 +30,7 @@ export const getDeliveryReport = async (req, res) => {
           supplier: d.supplier,
           itemName: item.itemName,
           sizeOrSource: item.sizeOrSource || "-",
+          gradeLevel: item.gradeLevel || "-",
           barcode: item.barcode?.length ? item.barcode.join(", ") : "-",
           quantity: item.quantity,
           date: new Date(d.dateReceived).toLocaleDateString(),
@@ -108,6 +109,7 @@ export const getReturnsReport = async (req, res) => {
           itemId: item.itemId,
           itemName: item.itemName,
           sizeOrSource: item.sizeOrSource || "-",
+          gradeLevel: item.gradeLevel || "-",
           quantity: item.quantity,
           condition: item.condition || "Good",
           remarks: item.remarks || "",
@@ -153,6 +155,7 @@ export const getCheckoutReport = async (req, res) => {
           receiptNo: c.receiptNo,
           itemName: item.itemName || "-",
           sizeOrSource: item.sizeOrSource || "-",
+          gradeLevel: item.gradeLevel || "-",
           barcode: item.barcode || "-",
           quantity: item.quantity || 0,
           date: new Date(c.createdAt).toLocaleDateString(),
@@ -249,7 +252,7 @@ export const getSummaryReport = async (req, res) => {
     ]);
 
     const inventory = await Inventory.find().select(
-      "itemId itemName sizeOrSource quantity"
+      "itemId itemName sizeOrSource gradeLevel quantity"
     );
 
     const summary = inventory.map((inv) => {
@@ -267,6 +270,7 @@ export const getSummaryReport = async (req, res) => {
         itemId: inv.itemId,
         itemName: inv.itemName,
         sizeOrSource: inv.sizeOrSource || "-",
+        gradeLevel: inv.gradeLevel || "-",
         totalDelivered,
         totalReturned,
         totalCheckedOut,

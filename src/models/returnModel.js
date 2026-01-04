@@ -5,6 +5,7 @@ const itemSchema = new mongoose.Schema({
   itemId: { type: String, required: true },
   itemName: { type: String, required: true },
   sizeOrSource: { type: String, default: "-" }, // ✅ added to show in Returns.jsx
+  gradeLevel: { type: String, default: "-" }, // ✅ added to show in Returns.jsx
   quantity: { type: Number, required: true },
   condition: { type: String, enum: ["Good", "Damaged"], default: "Good" },
   remarks: { type: String, default: "" },

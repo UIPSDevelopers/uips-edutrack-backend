@@ -5,6 +5,7 @@ const DeliveryItemSchema = new mongoose.Schema({
   itemName: String,
   itemType: String,
   sizeOrSource: String,
+  gradeLevel: String,
   barcode: [String],
   quantity: { type: Number, default: 1 },
 });

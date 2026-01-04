@@ -50,6 +50,7 @@ export const getAllItems = async (req, res) => {
         { itemName: { $regex: search, $options: "i" } },
         { itemType: { $regex: search, $options: "i" } },
         { sizeOrSource: { $regex: search, $options: "i" } },
+        { gradeLevel: { $regex: search, $options: "i" } },
         { barcode: { $regex: search, $options: "i" } },
       ];
     }
@@ -147,7 +148,7 @@ export const getItemByBarcode = async (req, res) => {
 // ➕ Single add item
 export const addItem = async (req, res) => {
   try {
-    const { itemType, itemName, sizeOrSource, barcode, addedBy } = req.body;
+    const { itemType, itemName, sizeOrSource, gradeLevel, barcode, addedBy } = req.body;
 
     if (!itemType || !itemName || !barcode || !addedBy) {
       return res.status(400).json({ message: "Missing required fields." });
@@ -167,6 +168,7 @@ export const addItem = async (req, res) => {
       itemType,
       itemName,
       sizeOrSource,
+      gradeLevel,
       barcode,
       addedBy,
       // quantity stays default: 0
@@ -203,6 +205,7 @@ export const bulkAddItems = async (req, res) => {
       itemType: item.itemType?.toString().trim() || "",
       itemName: item.itemName?.toString().trim() || "",
       sizeOrSource: item.sizeOrSource?.toString().trim() || "",
+      gradeLevel: item.gradeLevel?.toString().trim() || "",
       barcode: item.barcode?.toString().trim() || "",
       quantity: Number(item.quantity ?? 0) || 0, // 🆕 quantity support
       addedBy: item.addedBy?.toString().trim() || "Unknown User",
@@ -266,6 +269,7 @@ export const bulkAddItems = async (req, res) => {
         itemType: item.itemType,
         itemName: item.itemName,
         sizeOrSource: item.sizeOrSource,
+        gradeLevel: item.gradeLevel,
         barcode: item.barcode,
         addedBy: item.addedBy,
         quantity: item.quantity, // 🆕 initial stock from file
@@ -306,6 +310,7 @@ export const bulkAddItems = async (req, res) => {
             itemName: it.itemName,
             itemType: it.itemType,
             sizeOrSource: it.sizeOrSource || "",
+            gradeLevel: it.gradeLevel || "",
             barcode: [it.barcode], // keep same structure as /delivery/add
             quantity: it.quantity || 0,
           })),

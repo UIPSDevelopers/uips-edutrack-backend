@@ -64,6 +64,7 @@ export const addCheckout = async (req, res) => {
         itemName: existing.itemName,
         itemType: existing.itemType || "-",
         sizeOrSource: existing.sizeOrSource || "-",
+        gradeLevel: existing.gradeLevel || "-",
         barcode: existing.barcode || "-",
         quantity: item.quantity,
       });
