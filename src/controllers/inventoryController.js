@@ -31,7 +31,7 @@ export const getAllItems = async (req, res) => {
     const rawLimit = parseInt(req.query.limit, 10);
 
     const search = (req.query.search || "").trim();
-    const type = (req.query.type || "").trim();
+    const type = (req.query.itemType || "").trim();
     const allFlag = req.query.all === "true" || req.query.all === "1";
 
     const page = !allFlag && rawPage > 0 ? rawPage : 1;
